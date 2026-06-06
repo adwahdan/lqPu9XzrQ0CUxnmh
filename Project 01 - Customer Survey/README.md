@@ -71,3 +71,5 @@ Python, pandas, NumPy, scikit-learn, XGBoost, statsmodels, SciPy, matplotlib, se
 ### Notes for reviewers
 
 This project was completed as part of the Apziva AI Residency. The work it is meant to demonstrate is not just a fitted classifier but the reasoning around a small, messy dataset: deciding what to do about duplicate rows and then *measuring* the consequence of that decision rather than hiding it, choosing a significance test appropriate to ordinal survey data, and reading feature importance through more than one lens before recommending that a question be removed. On a 126-row dataset, the discipline of separating a stable conclusion (which features matter) from a fragile one (the exact accuracy number) is the point.
+
+UID for Apziva Instructors: lqPu9XzrQ0CUxnmh
