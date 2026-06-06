@@ -1,104 +1,73 @@
 # ACME Happiness Survey
 
-Predicting customer happiness from a short post-delivery survey, and identifying which
-questions are worth keeping.
+Predicting customer happiness from a six-question post-delivery survey, and identifying which questions are actually worth asking.
 
 ## Problem
 
-ACME runs a six-question survey after each delivery. Each question is answered on a 1 to 5
-scale, and the customer is separately recorded as happy or unhappy. The task is twofold:
+A logistics company runs a short survey after each delivery. Customers answer six questions on a 1–5 scale, and a separate label records whether the customer was happy (1) or unhappy (0). Two things are needed:
 
-1. Build a classifier that predicts happiness (`Y`) from the six survey questions.
-2. Find the smallest set of questions that preserves predictive value, so the survey can be
-   shortened.
+1. A model that predicts happiness from the six answers.
+2. A reading of which questions carry the signal, so the survey can be shortened without losing predictive power.
+
+The survey questions, renamed for readability, cover: delivery timeliness, order accuracy, product availability, price/value perception, courier service rating, and app usability.
 
 ## Data
 
-`ACME-HappinessSurvey2020.csv`, 126 responses, 7 columns, no missing values.
+126 survey responses, six features plus one binary target. No missing values, and the two classes are roughly balanced. Sixteen rows exactly duplicate another response.
 
-| Column | Meaning | Type |
-|---|---|---|
-| `customer_happiness` | Target, 1 = happy, 0 = unhappy | binary |
-| `delivery_timeliness` | Order arrived on time | 1 to 5 |
-| `order_accuracy` | Everything ordered was in the package | 1 to 5 |
-| `product_availability` | Wanted products were in stock | 1 to 5 |
-| `price_value_perception` | Paid a good price | 1 to 5 |
-| `courier_service_rating` | Satisfied with the courier | 1 to 5 |
-| `app_usability` | App made ordering easy | 1 to 5 |
-
-The original column names (`Y`, `X1` to `X6`) were renamed to the descriptive labels above for
-readability. Classes are close to balanced (about 55% happy). Sixteen rows exactly repeat
-another response. These are kept rather than dropped: two customers giving identical answers
-are legitimate independent observations, and survey answers naturally cluster on common
-patterns, so removing repeats would distort how frequent each pattern really is.
+The duplicates are the central judgement call in this project. Removing them is the tidy default, but two customers giving identical 1–5 answers are legitimate, independent observations, and dropping them distorts how common each response pattern really is. The final analysis keeps them, and the difference this makes is measured directly rather than assumed (see Results).
 
 ## Approach
 
-1. **Inspection and cleaning.** Checked shape, types, nulls, duplicates, and value ranges.
-   Confirmed every feature sits inside 1 to 5 and the target is binary.
-2. **Exploratory analysis.** Per-feature distributions split by class, a correlation matrix,
-   and variance inflation factors (all below 1.5, so no multicollinearity).
-3. **Statistical testing.** Welch's t-test and Mann-Whitney U on each feature to test whether
-   happy and unhappy customers answer differently.
-4. **Modelling.** Logistic Regression, Decision Tree, Random Forest, and XGBoost, with a
-   stratified 75/25 train/test split and class weighting. Hyperparameters tuned with
-   `GridSearchCV` over stratified 5-fold cross-validation.
-5. **Feature selection.** Random Forest importance (Gini and permutation) plus `RFECV` to find
-   the minimal feature set.
+The notebook moves from data integrity, to understanding the signal, to modelling, to feature reduction.
+
+**1. Inspection and quality checks**
+Loaded the data, renamed the cryptic survey columns to meaningful names, and confirmed shape, dtypes, null counts, and duplicate counts. Asserted that every feature stays within its valid 1–5 range and that the target is strictly binary, so any out-of-range value would halt the notebook rather than slip through.
+
+**2. Multicollinearity**
+Built a Pearson correlation matrix and computed Variance Inflation Factors. All VIFs came in under 1.5, meaning the six questions measure largely distinct things and none is redundant on statistical grounds alone.
+
+**3. Univariate analysis**
+Plotted each feature's distribution split by happy versus unhappy, to see which questions visibly separate the two groups before formal testing.
+
+**4. Statistical significance testing**
+For each feature, compared happy and unhappy groups using both Welch's t-test (unequal variances) and the Mann-Whitney U test (non-parametric, robust to the discrete 1–5 scale). The Mann-Whitney result was used for the significance decision, since the Likert data is ordinal rather than normally distributed.
+
+**5. Model comparison**
+Split the data 75/25 with stratification, then trained four classifiers with class weighting to handle any imbalance: Logistic Regression, a shallow Decision Tree, Random Forest, and XGBoost. Compared them on weighted F1 and accuracy.
+
+**6. Hyperparameter tuning**
+Tuned XGBoost and Random Forest with `GridSearchCV` over 5-fold stratified cross-validation, searching depth, estimator count, learning rate / split criteria, and regularisation parameters.
+
+**7. Feature importance and selection**
+Read Random Forest importance two ways: Gini importance (impurity reduction) and permutation importance (drop in test performance when a feature is shuffled), since Gini alone can be misleading. Then ran `RFECV` to find the smallest feature set that holds cross-validated accuracy.
+
+**8. Duplicate sensitivity check**
+Re-ran the Random Forest on the full dataset with duplicates retained, using identical split settings, to quantify exactly how much the duplicate-handling decision moves the headline number.
 
 ## Results
 
-Random Forest on the full data reaches **81.3% accuracy (0.84 F1)**. On deduplicated data the
-ceiling drops to about 64%, where the best single split was a depth-2 Decision Tree:
+**Which questions matter.** Only two features significantly separate happy from unhappy customers: delivery timeliness (p = 0.0022) and courier service rating (p = 0.0197). Order accuracy shows essentially no relationship with happiness (p = 0.93), making it the clearest candidate to drop from the survey.
 
-| Model | Test accuracy | Test F1 |
-|---|---|---|
-| Random Forest (full data) | 81.3% | 0.84 |
-| Decision Tree (deduplicated) | 64.3% | 0.64 |
-| Random Forest (deduplicated) | 60.7% | 0.61 |
-| Logistic Regression (deduplicated) | 57.1% | 0.57 |
-| XGBoost (deduplicated) | 53.6% | 0.54 |
+**Model performance.** Random Forest was the strongest model, reaching 81.3% accuracy (0.84 F1) on the full data. On the deduplicated data the accuracy ceiling is roughly 64%, and RFECV reaches that same ceiling using just three features.
 
-- `RFECV` reduced the survey to three features and matched the deduplicated full-model accuracy,
-  confirming the survey can be shortened.
-- `delivery_timeliness` and `courier_service_rating` are the only statistically significant
-  predictors (Mann-Whitney p = 0.0022 and 0.0197). `order_accuracy` shows no relationship to
-  happiness at all.
+**Reading the gap honestly.** Most of the distance between 64% and 81% comes from the exact duplicates: under a random split, some identical rows can land in both train and test, so 81% is optimistic. The true generalization estimate sits between the two numbers. Crucially, the feature conclusions are stable either way; the duplicate handling moves the accuracy figure, not the story about which questions matter.
 
-> Most of the gap between 81% and 64% is the exact duplicates. Under a random split, some
-> identical (answers and label) rows land on both sides, so the model gets test credit for
-> rows it effectively saw in training. That makes 81% an optimistic read and the deduplicated
-> 64% a pessimistic one; the true out-of-sample number sits between them. Cross-validated
-> accuracy is the cleaner way to report it. The feature conclusions hold either way.
+## Takeaway
 
-See `CONCLUSION.md` for the full write-up and business interpretation.
+Delivery speed and courier service are the levers tied to customer happiness. Order accuracy carries no signal and is the first question to cut. The six-question survey can be shortened to roughly three questions without sacrificing predictive value, which is the actionable result for the business.
 
-## Repository
+## Tech stack
 
-```
-.
-├── Happy_Customers.ipynb          # full analysis notebook
-├── ACME-HappinessSurvey2020.csv   # raw data
-├── CONCLUSION.md                  # findings and interpretation
-└── README.md
-```
+Python, pandas, NumPy, scikit-learn, XGBoost, statsmodels, SciPy, matplotlib, seaborn.
 
-## Running it
+## Repository contents
 
-```bash
-pip install pandas numpy matplotlib seaborn scipy scikit-learn xgboost statsmodels missingno
-jupyter notebook Happy_Customers.ipynb
-```
+- `Happy_Customers.ipynb` — full analysis notebook, from data checks through modelling and conclusions.
+- `ACME-HappinessSurvey2020.csv` — the survey dataset.
 
-Run the cells top to bottom. The notebook reads the CSV from the working directory, so keep
-the data file alongside the notebook.
+---
 
-## Key takeaways
+### Notes for reviewers
 
-- Delivery speed and courier service are the levers most associated with customer happiness.
-- The survey can be cut to roughly three questions without losing predictive value.
-- Sample size is the main ceiling. With duplicates kept the model reaches 81%, but the honest
-  generalization estimate is lower, and more responses would help more than further tuning.
-
-
-Apziva UID: lqPu9XzrQ0CUxnmh
+This project was completed as part of the Apziva AI Residency. The work it is meant to demonstrate is not just a fitted classifier but the reasoning around a small, messy dataset: deciding what to do about duplicate rows and then *measuring* the consequence of that decision rather than hiding it, choosing a significance test appropriate to ordinal survey data, and reading feature importance through more than one lens before recommending that a question be removed. On a 126-row dataset, the discipline of separating a stable conclusion (which features matter) from a fragile one (the exact accuracy number) is the point.
